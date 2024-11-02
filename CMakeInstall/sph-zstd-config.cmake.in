@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+# Check if target already available
+if(NOT TARGET sph-zstd::sph-zstd)
+    include(CMakeFindDependencyMacro)
+    find_dependency(zstd)
+    # provide path for scripts
+    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+    include("${CMAKE_CURRENT_LIST_DIR}/sph-zstd-targets.cmake")
+#endif()

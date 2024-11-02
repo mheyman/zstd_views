@@ -1,0 +1,13 @@
+{
+  "name": "zstd-stream",
+  "version-semver": "1.0.0",
+  "dependencies": [
+    "zstd"
+  ],
+  "features": {
+    "tests": {
+      "description": "Build tests",
+      "dependencies": [ "doctest", "fmt" ]
+    }
+  }
+}

@@ -30,3 +30,8 @@
 *.exe
 *.out
 *.app
+
+# build artifacts
+.vs/*
+!.vs/launch.vs.json
+out

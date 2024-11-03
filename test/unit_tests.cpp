@@ -20,9 +20,9 @@ namespace
 	};
 }
 
-TEST_CASE("zstd.foo")
+TEST_CASE("zstd.basic")
 {
-	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(10'000)) | std::ranges::to<std::vector>() };
+	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1'000)) | std::ranges::to<std::vector>() };
 	auto compressed{ truth | sph::views::zstd_encode(0) | std::ranges::to<std::vector>()};
 	CHECK_LT(compressed.size(), truth.size() * sizeof(size_t));
 	auto check{ compressed | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
@@ -33,6 +33,33 @@ TEST_CASE("zstd.foo")
 			CHECK_EQ(t, c);
 		});
 }
+
+TEST_CASE("zstd.bigger")
+{
+	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(10'000'000)) | std::ranges::to<std::vector>() };
+	auto compressed{ truth | sph::views::zstd_encode(0) | std::ranges::to<std::vector>() };
+	CHECK_LT(compressed.size(), truth.size() * sizeof(size_t));
+	auto check{ compressed | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
+	CHECK_EQ(check.size(), truth.size());
+	std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
+		{
+			auto [t, c] {v};
+			CHECK_EQ(t, c);
+		});
+}
+
+TEST_CASE("zstd.encode_decode")
+{
+	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1'000'000)) | std::ranges::to<std::vector>() };
+	auto check{ truth | sph::views::zstd_encode(0) | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
+	CHECK_EQ(check.size(), truth.size());
+	std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
+		{
+			auto [t, c] {v};
+			CHECK_EQ(t, c);
+		});
+}
+
 
 TEST_CASE("zstd.wont_compile")
 {

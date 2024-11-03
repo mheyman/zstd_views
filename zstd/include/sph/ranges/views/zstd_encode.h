@@ -42,14 +42,14 @@ namespace sph::ranges::views
                 zstd_compressor compress_;
                 std::ranges::iterator_t<R> current_;
                 size_t current_pos_{ 0 };
-                std::ranges::iterator_t<R> end_;
+                std::ranges::sentinel_t<R> end_;
                 value_type value_;
                 bool reading_complete_{ false };
                 bool compressing_complete_{ false };
                 bool at_end_{ false };
             public:
 
-                iterator(int compression_level, std::ranges::iterator_t<R> begin, std::ranges::iterator_t<R> end)
+                iterator(int compression_level, std::ranges::iterator_t<R> begin, std::ranges::sentinel_t<R> end)
                     : compress_{ compression_level }, current_(begin), end_(end)
                 {
                     load_next_value();

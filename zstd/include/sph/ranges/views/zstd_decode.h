@@ -8,7 +8,7 @@ namespace sph::ranges::views
 {
     namespace detail
     {
-        // Custom transform view that filters bytes and then converts every 4 bytes into 5 bytes.
+        // Custom view that takes a zstd-encoded range and converts it to a decompressed range.
         template<std::ranges::viewable_range R, typename T>
             requires std::ranges::input_range<R> && std::is_standard_layout_v<T>
         class zstd_decode_view : public std::ranges::view_interface<zstd_decode_view<R, T>> {
@@ -40,13 +40,13 @@ namespace sph::ranges::views
                 zstd_decompressor decompress_;
                 std::ranges::iterator_t<R> current_;
                 size_t current_pos_{ 0 };
-                std::ranges::iterator_t<R> end_;
+                std::ranges::sentinel_t<R> end_;
                 value_type value_;
                 bool maybe_done_{ false };
                 bool at_end_{ false };
             public:
 
-                iterator(std::ranges::iterator_t<R> begin, std::ranges::iterator_t<R> end)
+                iterator(std::ranges::iterator_t<R> begin, std::ranges::sentinel_t<R> end)
                     : current_(begin), end_(end)
                 {
                     load_next_value();
@@ -138,13 +138,14 @@ namespace sph::ranges::views
                     }
 
                     size_t i{ 0 };
+                    input_type current{ *current_ };
                     while(true)
                     {
                         // const_cast because, I believe, the zstd library
                         // expected the setting of the buffer pointer after
                         // loading, not the loading of an already set buffer
                         // pointer.
-                        decompress_.in_src()[i] = reinterpret_cast<uint8_t const*>(&*current_)[current_pos_];
+                        decompress_.in_src()[i] = reinterpret_cast<uint8_t const*>(&current)[current_pos_];
                         ++i;
                         ++current_pos_;
                         if (i == decompress_.in_max_size())

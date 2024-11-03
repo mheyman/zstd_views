@@ -83,6 +83,7 @@ namespace sph::ranges::views::detail
 		auto operator=(zstd_decompressor&&) -> zstd_decompressor& = default;
 
 		[[nodiscard]] auto in() const -> ZSTD_inBuffer& { return data_->buf.in(); }
+		[[nodiscard]] auto in_src() const -> uint8_t* { return const_cast<uint8_t*>(static_cast<uint8_t const*>(data_->buf.in().src)); }
 		[[nodiscard]] auto in_max_size() const -> size_t { return data_->buf.in_max_size(); }
 		[[nodiscard]] auto out() const -> ZSTD_outBuffer& { return data_->buf.out(); }
 		[[nodiscard]] auto out_max_size() const -> size_t { return data_->buf.out_max_size(); }
@@ -102,8 +103,8 @@ namespace sph::ranges::views::detail
 			{
 				throw std::runtime_error("Only one copy of the zstd decompressor can decompress. You probably made a copy of the iterator and tried to use it. Moving the iterator is fine.");
 			}
-			auto o{ data_->buf.out() };
-			auto i{ data_->buf.in() };
+			auto &o{ data_->buf.out() };
+			auto &i{ data_->buf.in() };
 			o.pos = 0;
 			o.size = data_->buf.out_max_size();
 			size_t const ret{ ZSTD_decompressStream(data_->ctx, &o, &i) };
@@ -114,6 +115,8 @@ namespace sph::ranges::views::detail
 				throw std::runtime_error(std::format("zstd failed compression: {}.", ZSTD_getErrorString(err)));
 			}
 
+			o.size = o.pos;
+			o.pos = 0;
 			return ret == 0;
 		}
 	};

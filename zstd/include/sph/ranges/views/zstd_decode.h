@@ -140,8 +140,14 @@ namespace sph::ranges::views
                     size_t i{ 0 };
                     while(true)
                     {
-                        static_cast<uint8_t const*>(decompress_.in().src)[i] = reinterpret_cast<uint8_t const*>(&*current_)[current_pos_++];
-                        if (i == decompress_.in().size)
+                        // const_cast because, I believe, the zstd library
+                        // expected the setting of the buffer pointer after
+                        // loading, not the loading of an already set buffer
+                        // pointer.
+                        decompress_.in_src()[i] = reinterpret_cast<uint8_t const*>(&*current_)[current_pos_];
+                        ++i;
+                        ++current_pos_;
+                        if (i == decompress_.in_max_size())
                         {
                             if (current_pos_ == sizeof(input_type))
                             {
@@ -149,6 +155,7 @@ namespace sph::ranges::views
                                 current_pos_ = 0;
                             }
 
+                            decompress_.in().size = i;
                             decompress_.in().pos = 0;
                             return true;
                         }
@@ -158,13 +165,13 @@ namespace sph::ranges::views
                             ++current_;
                             if (current_ == end_)
                             {
+                                decompress_.in().size = i;
+                                decompress_.in().pos = 0;
                                 if (i == 0)
                                 {
                                     return false;
                                 }
 
-                                decompress_.in().size = i;
-                                decompress_.in().pos = 0;
                                 return true;
                             }
 

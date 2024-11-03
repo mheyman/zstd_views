@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <format>
 #include <ranges>
 #include <stdexcept>
@@ -12,10 +13,11 @@ namespace sph::ranges::views
         template<std::ranges::viewable_range R, typename T>
             requires std::ranges::input_range<R>&& std::is_standard_layout_v<T>
         class zstd_encode_view : public std::ranges::view_interface<zstd_encode_view<R, T>> {
+            int compression_level_;
             R input_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
         public:
-            explicit zstd_encode_view(R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
-                : input_(std::forward<R>(input)) {}
+            explicit zstd_encode_view(int compression_level, R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+                : compression_level_{ compression_level }, input_(std::forward<R>(input)) {}
 
             zstd_encode_view(zstd_encode_view const&) = default;
             zstd_encode_view(zstd_encode_view&&) = default;
@@ -68,7 +70,7 @@ namespace sph::ranges::views
 
                 auto equals(const iterator& i) const -> bool
                 {
-                    return current_ == i.current_ && compress_.in().pos == i.compress_.in().pos && compress_.out().pos == i.compress_.out().pos;
+                    return current_ == i.current_ && compress_.in_pos() == i.compress_.in_pos() && compress_.out_pos() == i.compress_.out_pos();
                 }
 
                 auto equals(const sentinel&) const -> bool
@@ -104,6 +106,11 @@ namespace sph::ranges::views
 
                                 return;
                             }
+
+                            if (compress_.out_size() == 0)
+                            {
+                                return;
+                            }
                         }
 
                         v = static_cast<uint8_t const*>(compress_.out().dst)[compress_.out().pos];
@@ -113,7 +120,7 @@ namespace sph::ranges::views
 
                 auto load_next_out() -> bool
                 {
-                    if (compress_.in().pos < compress_.in().size())
+                    if (compress_.in().pos < compress_.in().size)
                     {
                         // not done processing the in buffer.
                         compressing_complete_ = compress_(reading_complete_ ? ZSTD_e_end : ZSTD_e_continue);
@@ -134,10 +141,15 @@ namespace sph::ranges::views
                             compressing_complete_ = compress_(ZSTD_e_end);
                             return true;
                         }
+
+                        compressing_complete_ = compress_(ZSTD_e_end);
+                    }
+                    else
+                    {
+                        compressing_complete_ = compress_(ZSTD_e_continue);
                     }
 
-                    compressing_complete_ = compress_(ZSTD_e_continue);
-                    return true;
+                    return !(compressing_complete_ && compress_.out_size() == 0);
                 }
 
                 auto load_next_in() -> bool
@@ -151,8 +163,9 @@ namespace sph::ranges::views
                     size_t i{ 0 };
                     while (true)
                     {
-                        static_cast<uint8_t const*>(compress_.in().src)[i] = reinterpret_cast<uint8_t const*>(&*current_)[current_pos_++];
-                        if (i == compress_.in().size)
+                        compress_.in_src()[i] = reinterpret_cast<uint8_t const*>(&*current_)[current_pos_++];
+                        ++i;
+                        if (i == compress_.in_max_size())
                         {
                             if (current_pos_ == sizeof(input_type))
                             {
@@ -160,6 +173,7 @@ namespace sph::ranges::views
                                 current_pos_ = 0;
                             }
 
+                            compress_.in().size = i;
                             compress_.in().pos = 0;
                             return true;
                         }
@@ -170,13 +184,13 @@ namespace sph::ranges::views
                             if (current_ == end_)
                             {
                                 reading_complete_ = true;
+                                compress_.in().size = i;
+                                compress_.in().pos = 0;
                                 if (i == 0)
                                 {
                                     return false;
                                 }
 
-                                compress_.in().size = i;
-                                compress_.in().pos = 0;
                                 return true;
                             }
 
@@ -194,26 +208,24 @@ namespace sph::ranges::views
                 auto operator!=(const iterator& i) const -> bool { return !i.equals(*this); }
             };
 
-            iterator begin() { return iterator(std::ranges::begin(input_), std::ranges::end(input_)); }
+            iterator begin() { return iterator(compression_level_, std::ranges::begin(input_), std::ranges::end(input_)); }
 
             sentinel end() { return sentinel{}; }
-        };
-
-        struct zstd_encode_tag
-        {
-
         };
 
         template<std::ranges::viewable_range R, typename T = uint8_t>
         zstd_encode_view(R&&) -> zstd_encode_view<R, T>;
 
         template <typename T>
-        struct zstd_encode_fn : std::ranges::range_adaptor_closure<zstd_encode_fn<T>>
+        class zstd_encode_fn : public std::ranges::range_adaptor_closure<zstd_encode_fn<T>>
         {
+            int compression_level_;
+        public:
+            zstd_encode_fn(int compression_level) : compression_level_{compression_level}{}
             template <std::ranges::viewable_range R>
             [[nodiscard]] constexpr auto operator()(R&& range) const -> zstd_encode_view<R, T>
             {
-                return zstd_encode_view<R, T>(std::forward<R>(range));
+                return zstd_encode_view<R, T>(compression_level_, std::forward<R>(range));
             }
         };
     }
@@ -222,8 +234,8 @@ namespace sph::ranges::views
 namespace sph::views
 {
     template<typename T = uint8_t>
-    auto zstd_encode(sph::ranges::views::detail::zstd_encode_tag = {}) -> sph::ranges::views::detail::zstd_encode_fn<T>
+    auto zstd_encode(int compression_level = 0) -> sph::ranges::views::detail::zstd_encode_fn<T>
     {
-        return {};
+        return {compression_level};
     }
 }

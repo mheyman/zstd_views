@@ -90,9 +90,14 @@ namespace sph::ranges::views::detail
 
 		auto operator=(zstd_compressor&&) -> zstd_compressor& = default;
 
-		[[nodiscard]] auto in() const -> ZSTD_inBuffer& { return data_->buf.in(); }
+		[[nodiscard]] auto in() -> ZSTD_inBuffer& { return data_->buf.in(); }
+		[[nodiscard]] auto in_src() const -> uint8_t* { return const_cast<uint8_t*>(static_cast<uint8_t const*>(data_->buf.in().src)); }
+		[[nodiscard]] auto in_pos() const -> size_t { return data_->buf.in().pos; }
+		[[nodiscard]] auto in_size() const -> size_t { return data_->buf.in().size; }
 		[[nodiscard]] auto in_max_size() const -> size_t { return data_->buf.in_max_size(); }
-		[[nodiscard]] auto out() const -> ZSTD_outBuffer& { return data_->buf.out(); }
+		[[nodiscard]] auto out() -> ZSTD_outBuffer& { return data_->buf.out(); }
+		[[nodiscard]] auto out_pos() const -> size_t { return data_->buf.out().pos; }
+		[[nodiscard]] auto out_size() const -> size_t { return data_->buf.out().size; }
 		[[nodiscard]] auto out_max_size() const -> size_t { return data_->buf.out_max_size(); }
 
 		/**
@@ -116,8 +121,8 @@ namespace sph::ranges::views::detail
 				throw std::runtime_error("Only one copy of the zstd compressor can compress. You probably made a copy of the iterator and tried to use it. Moving the iterator is fine.");
 			}
 
-			auto o{ data_->buf.out() };
-			auto i{ data_->buf.in() };
+			auto &o{ data_->buf.out() };
+			auto &i{ data_->buf.in() };
 			o.pos = 0;
 			o.size = data_->buf.out_max_size();
 			size_t const ret{ ZSTD_compressStream2(data_->ctx, &o, &i, mode) };
@@ -128,6 +133,8 @@ namespace sph::ranges::views::detail
 				throw std::runtime_error(std::format("zstd failed compression: {}.", ZSTD_getErrorString(err)));
 			}
 
+			o.size = o.pos;
+			o.pos = 0;
 			return ret == 0;
 		}
 	};

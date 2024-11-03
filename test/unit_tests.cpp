@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <doctest/doctest.h>
 
 #include <array>
@@ -21,15 +22,22 @@ namespace
 
 TEST_CASE("zstd.foo")
 {
-	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1000)) | std::ranges::to<std::vector>() };
-	auto compressed{ truth | sph::views::zstd_encode() | std::ranges::to<std::vector>()};
+	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(10'000)) | std::ranges::to<std::vector>() };
+	auto compressed{ truth | sph::views::zstd_encode(0) | std::ranges::to<std::vector>()};
 	CHECK_LT(compressed.size(), truth.size() * sizeof(size_t));
+	auto check{ compressed | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
+	CHECK_EQ(check.size(), truth.size());
+	std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
+		{
+			auto [t, c] {v};
+			CHECK_EQ(t, c);
+		});
 }
 
 TEST_CASE("zstd.wont_compile")
 {
-	std::array<wont_compile, 4> a{ {wont_compile{1}, wont_compile{2}, wont_compile{3}, wont_compile{4}} };
+	[[maybe_unused]] std::array<wont_compile, 4> a{ {wont_compile{1}, wont_compile{2}, wont_compile{3}, wont_compile{4}} };
 	// auto encoded{ a | sph::views::zstd_encode() };
-	std::array<uint8_t, 8> b{ {1, 2, 3, 4, 5, 6, 7, 8} };
+	[[maybe_unused]] std::array<uint8_t, 8> b{ {1, 2, 3, 4, 5, 6, 7, 8} };
 	// auto decoded{ b | sph::views::zstd_decode<wont_compile>() };
 }

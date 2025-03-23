@@ -37,8 +37,9 @@ TEST_CASE("zstd.basic")
 TEST_CASE("zstd.bigger")
 {
 	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(10'000'000)) | std::ranges::to<std::vector>() };
-	auto compressed{ truth | sph::views::zstd_encode(0) | std::ranges::to<std::vector>() };
-	CHECK_LT(compressed.size(), truth.size() * sizeof(size_t));
+	auto compressed{ truth | sph::views::zstd_encode<size_t>(0) | std::ranges::to<std::vector>() };
+	fmt::print("Compressed size: {} ({} * {})\n", compressed.size()* sizeof(size_t), compressed.size(), sizeof(size_t));
+	CHECK_LT(compressed.size() * sizeof(size_t), truth.size() * sizeof(size_t));
 	auto check{ compressed | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
 	CHECK_EQ(check.size(), truth.size());
 	std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)

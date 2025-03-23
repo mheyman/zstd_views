@@ -32,22 +32,25 @@ namespace sph::ranges::views
             class iterator
             {
             public:
+                using iterator_concept = std::input_iterator_tag;
                 using iterator_category = std::input_iterator_tag;
                 using value_type = T;
                 using difference_type = std::ptrdiff_t;
-                using input_type = std::remove_cvref_t<std::ranges::range_value_t<R>>;
+                using pointer = const T*;
+                using reference = const T&;
+				using input_type = std::remove_cvref_t<std::ranges::range_value_t<R>>;
             private:
                 zstd_decompressor decompress_;
-                std::ranges::iterator_t<R> current_;
+                std::ranges::const_iterator_t<R> current_;
                 size_t current_pos_{ 0 };
-                std::ranges::sentinel_t<R> end_;
+                std::ranges::const_sentinel_t<R> end_;
                 value_type value_;
                 bool maybe_done_{ false };
                 bool at_end_{ false };
             public:
 
-                iterator(std::ranges::iterator_t<R> begin, std::ranges::sentinel_t<R> end)
-                    : current_(begin), end_(end)
+                iterator(std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end)
+                    : current_(std::move(begin)), end_(std::move(end))
                 {
                     load_next_value();
                 }
@@ -65,12 +68,12 @@ namespace sph::ranges::views
                     return *this;
                 }
 
-                auto equals(const iterator& i) const -> bool
+                auto equals(const iterator& i) const noexcept -> bool
                 {
                     return current_ == i.current_ && decompress_.in().pos == i.decompress_.in().pos && decompress_.out().pos == i.decompress_.out().pos;
                 }
 
-            	auto equals(const sentinel&) const -> bool
+            	auto equals(const sentinel&) const noexcept -> bool
                 {
                     return at_end_;
                 }
@@ -80,10 +83,10 @@ namespace sph::ranges::views
 	                return value_;
                 }
 
-                auto operator==(const iterator& other) const -> bool { return equals(other); }
-                auto operator==(const sentinel&s) const -> bool { return equals(s); }
-                auto operator!=(const iterator& other) const -> bool { return !equals(other); }
-                auto operator!=(const sentinel&s) const -> bool { return !equals(s); }
+                auto operator==(const iterator& other) const noexcept -> bool { return equals(other); }
+                auto operator==(const sentinel&s) const noexcept -> bool { return equals(s); }
+                auto operator!=(const iterator& other) const noexcept -> bool { return !equals(other); }
+                auto operator!=(const sentinel&s) const noexcept -> bool { return !equals(s); }
 
             private:
                 void load_next_value()
@@ -138,32 +141,20 @@ namespace sph::ranges::views
                     }
 
                     size_t i{ 0 };
-                    input_type current{ *current_ };
-                    while(true)
-                    {
-                        // const_cast because, I believe, the zstd library
-                        // expected the setting of the buffer pointer after
-                        // loading, not the loading of an already set buffer
-                        // pointer.
-                        decompress_.in_src()[i] = reinterpret_cast<uint8_t const*>(&current)[current_pos_];
-                        ++i;
-                        ++current_pos_;
-                        if (i == decompress_.in_max_size())
+                    if constexpr (sizeof(input_type) == 1)
+					{
+                        while (true)
                         {
-                            if (current_pos_ == sizeof(input_type))
+                            decompress_.in_src()[i] = static_cast<uint8_t>(*current_);
+                            ++i;
+                            ++current_;
+                            if (i == decompress_.in_max_size())
                             {
-                                ++current_;
-                                current_pos_ = 0;
+                                decompress_.in().size = i;
+                                decompress_.in().pos = 0;
+                                return true;
                             }
 
-                            decompress_.in().size = i;
-                            decompress_.in().pos = 0;
-                            return true;
-                        }
-
-                        if (current_pos_ == sizeof(input_type))
-                        {
-                            ++current_;
                             if (current_ == end_)
                             {
                                 decompress_.in().size = i;
@@ -175,9 +166,48 @@ namespace sph::ranges::views
 
                                 return true;
                             }
-
-                            current_pos_ = 0;
                         }
+                    }
+					else
+					{
+	                    input_type current{ *current_ };
+	                    while(true)
+	                    {
+	                        decompress_.in_src()[i] = reinterpret_cast<uint8_t const*>(&current)[current_pos_];
+	                        ++i;
+	                        ++current_pos_;
+	                        if (i == decompress_.in_max_size())
+	                        {
+	                            if (current_pos_ == sizeof(input_type))
+	                            {
+	                                ++current_;
+	                                current_pos_ = 0;
+	                            }
+
+	                            decompress_.in().size = i;
+	                            decompress_.in().pos = 0;
+	                            return true;
+	                        }
+
+	                        if (current_pos_ == sizeof(input_type))
+	                        {
+	                            ++current_;
+	                            if (current_ == end_)
+	                            {
+	                                decompress_.in().size = i;
+	                                decompress_.in().pos = 0;
+	                                if (i == 0)
+	                                {
+	                                    return false;
+	                                }
+
+	                                return true;
+	                            }
+
+	                            current = *current_;
+	                            current_pos_ = 0;
+	                        }
+	                    }
                     }
                 }
             };
@@ -190,14 +220,9 @@ namespace sph::ranges::views
                 auto operator!=(const iterator& i) const -> bool { return !i.equals(*this); }
             };
 
-            iterator begin() { return iterator(std::ranges::begin(input_), std::ranges::end(input_)); }
+            iterator begin() const { return iterator(std::ranges::begin(input_), std::ranges::end(input_)); }
 
-            sentinel end() { return sentinel{}; }
-        };
-
-        struct zstd_decode_tag
-        {
-	        
+            sentinel end() const { return sentinel{}; }
         };
 
         template<std::ranges::viewable_range R, typename T = uint8_t>
@@ -207,9 +232,9 @@ namespace sph::ranges::views
         struct zstd_decode_fn : std::ranges::range_adaptor_closure<zstd_decode_fn<T>>
         {
             template <std::ranges::viewable_range R>
-            [[nodiscard]] constexpr auto operator()(R&& range) const -> zstd_decode_view<R, T>
+            [[nodiscard]] constexpr auto operator()(R&& range) const -> zstd_decode_view<std::views::all_t<R>, T>
             {
-                return zstd_decode_view<R, T>(std::forward<R>(range));
+                return zstd_decode_view<std::views::all_t<R>, T>(std::views::all(std::forward<R>(range)));
             }
         };
     }
@@ -218,7 +243,7 @@ namespace sph::ranges::views
 namespace sph::views
 {
     template<typename T = uint8_t>
-    auto zstd_decode(sph::ranges::views::detail::zstd_decode_tag = {}) -> sph::ranges::views::detail::zstd_decode_fn<T>
+    auto zstd_decode() -> sph::ranges::views::detail::zstd_decode_fn<T>
     {
         return {};
     }

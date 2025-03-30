@@ -123,20 +123,111 @@ namespace
         ZSTD_freeCCtx(cctx);
         return ret;
     }
+
+	/**
+	 * Lightly ported example code from https://github.com/facebook/zstd/blob/dev/examples/streaming_decompression.c.
+	 *
+	 * Uses vectors instead of files.
+	 * 
+	 * @param to_decompress The data to decompress.
+	 * @return The decompressed data.
+	 */
+	auto stream_decompress_old_school(std::span<uint8_t> to_decompress) -> std::vector<uint8_t>
+    {
+		std::vector<uint8_t> buf_in(ZSTD_DStreamInSize());
+		std::vector<uint8_t> buf_out(ZSTD_DStreamOutSize());
+
+        ZSTD_DCtx* const dctx = ZSTD_createDCtx();
+		if (dctx == nullptr)
+        {
+			throw std::runtime_error("ZSTD_createDCtx() failed!");
+		}
+
+        /* This loop assumes that the input file is one or more concatenated zstd
+         * streams. This example won't work if there is trailing non-zstd data at
+         * the end, but streaming decompression in general handles this case.
+         * ZSTD_decompressStream() returns 0 exactly when the frame is completed,
+         * and doesn't consume input after the frame.
+         */
+        size_t last_result = 0;
+        int isEmpty = 1;
+        size_t to_decompress_pos{ 0 };
+		std::vector<uint8_t> ret;
+        while (to_decompress_pos < to_decompress.size())
+        {
+			size_t read{ std::min(buf_in.size(), to_decompress.size() - to_decompress_pos) };
+			std::copy_n(to_decompress.data() + to_decompress_pos, read, buf_in.data());
+			to_decompress_pos += read;
+            isEmpty = 0;
+            ZSTD_inBuffer input { buf_in.data(), read, 0 };
+            /* Given a valid frame, zstd won't consume the last byte of the frame
+             * until it has flushed all the decompressed data of the frame.
+             * Therefore, instead of checking if the return code is 0, we can
+             * decompress just check if input.pos < input.size.
+             */
+            while (input.pos < input.size)
+            {
+                ZSTD_outBuffer output { buf_out.data(), buf_out.size(), 0 };
+                /* The return code is zero if the frame is complete, but there may
+                 * be multiple frames concatenated together. Zstd will automatically
+                 * reset the context when a frame is complete. Still, calling
+                 * ZSTD_DCtx_reset() can be useful to reset the context to a clean
+                 * state, for instance if the last decompression call returned an
+                 * error.
+                 */
+                size_t const res = ZSTD_decompressStream(dctx, &output, &input);
+                if (ZSTD_isError(res))
+                {
+					throw std::runtime_error(fmt::format("ZSTD_decompressStream() failed: {}", ZSTD_getErrorName(res)));
+				}
+
+				ret.insert(ret.end(), buf_out.data(), buf_out.data() + output.pos);
+                last_result = res;
+            }
+        }
+
+        if (isEmpty)
+        {
+			throw std::runtime_error("input is empty");
+        }
+
+        if (last_result != 0)
+        {
+            /* The last return value from ZSTD_decompressStream did not end on a
+             * frame, but we reached the end of the data! We assume this is an
+             * error, and the input was truncated.
+             */
+			throw std::runtime_error(fmt::format("EOF before end of stream: {}", last_result));
+        }
+
+        ZSTD_freeDCtx(dctx);
+        return ret;
+    }
+
 }
 
 TEST_CASE("zstd.ranges_vs_old_school")
 {
-	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(100'000)) | std::ranges::to<std::vector>() };
+	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(10'000'000)) | std::ranges::to<std::vector>() };
 	std::span<uint8_t const> truth_bytes(reinterpret_cast<uint8_t const*>(truth.data()), truth.size() * sizeof(size_t));
-	auto old_school{ stream_compress_old_school(truth_bytes, 0, 0) };
-	auto check{ truth | sph::views::zstd_encode() | std::ranges::to<std::vector>() };
-	CHECK_EQ(check.size(), old_school.size());
-	std::ranges::for_each(std::views::zip(old_school, check), [](auto&& v)
+	auto old_school_compressed{ stream_compress_old_school(truth_bytes, 0, 0) };
+	auto ranges_compressed{ truth | sph::views::zstd_encode() | std::ranges::to<std::vector>() };
+	CHECK_EQ(ranges_compressed.size(), old_school_compressed.size());
+	std::ranges::for_each(std::views::zip(old_school_compressed, ranges_compressed), [](auto&& v)
 		{
 			auto [t, c] {v};
 			CHECK_EQ(t, c);
 		});
+
+	auto old_school_decompressed{ stream_decompress_old_school(old_school_compressed) };
+	auto ranges_decompressed{ old_school_compressed | sph::views::zstd_decode() | std::ranges::to<std::vector>() };
+    CHECK_EQ(old_school_decompressed.size(), ranges_decompressed.size());
+	CHECK_EQ(truth.size() * sizeof(size_t), ranges_decompressed.size());
+    std::ranges::for_each(std::views::zip(old_school_decompressed, ranges_decompressed), [](auto&& v)
+        {
+            auto [t, c] {v};
+            CHECK_EQ(t, c);
+        });
 }
 TEST_CASE("zstd.basic")
 {

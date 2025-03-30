@@ -211,6 +211,11 @@ namespace sph::ranges::views
 
                 auto load_next_out() -> bool
                 {
+                    if (compressing_complete_)
+                    {
+                        return false;
+                    }
+
                     if (compress_.in().pos < compress_.in().size)
                     {
                         // not done processing the in buffer.
@@ -233,11 +238,12 @@ namespace sph::ranges::views
                             return true;
                         }
 
-                        compressing_complete_ = compress_(ZSTD_e_end);
+                        // load_next_in() can set reading_complete_ to true.
+                        compressing_complete_ = compress_(reading_complete_ ? ZSTD_e_end : ZSTD_e_continue);
                     }
                     else
                     {
-                        compressing_complete_ = compress_(ZSTD_e_continue);
+                        compressing_complete_ = compress_(ZSTD_e_end);
                     }
 
                     return !(compressing_complete_ && compress_.out_size() == 0);

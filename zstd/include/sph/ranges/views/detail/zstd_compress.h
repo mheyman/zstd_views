@@ -1,6 +1,8 @@
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <format>
+#include <fmt/format.h>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -55,14 +57,8 @@ namespace sph::ranges::views::detail
 					throw std::runtime_error("Failed to create zstd compress context.");
 				}
 
-				if (level > ZSTD_maxCLevel())
-				{
-					level = ZSTD_maxCLevel();
-				}
-
-				ZSTD_CCtx_setParameter(ret, ZSTD_c_compressionLevel, level);
+				ZSTD_CCtx_setParameter(ret, ZSTD_c_compressionLevel, std::min(level, ZSTD_maxCLevel()));
 				ZSTD_CCtx_setParameter(ret, ZSTD_c_checksumFlag, 1);
-
 				return ret;
 			}
 		};
@@ -125,17 +121,17 @@ namespace sph::ranges::views::detail
 			auto &i{ data_->buf.in() };
 			o.pos = 0;
 			o.size = data_->buf.out_max_size();
-			size_t const ret{ ZSTD_compressStream2(data_->ctx, &o, &i, mode) };
-			if (ZSTD_isError(ret))
+			size_t const res{ ZSTD_compressStream2(data_->ctx, &o, &i, mode) };
+			if (ZSTD_isError(res))
 			{
-				ZSTD_ErrorCode const err{ ZSTD_getErrorCode(ret) };
+				ZSTD_ErrorCode const err{ ZSTD_getErrorCode(res) };
 				ZSTD_CCtx_reset(data_->ctx, ZSTD_reset_session_only);
 				throw std::runtime_error(std::format("zstd failed compression: {}.", ZSTD_getErrorString(err)));
 			}
 
 			o.size = o.pos;
 			o.pos = 0;
-			return ret == 0;
+			return mode == ZSTD_e_end && res == 0;
 		}
 	};
 }

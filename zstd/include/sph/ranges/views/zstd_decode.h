@@ -17,6 +17,7 @@ namespace sph::ranges::views
             requires std::ranges::input_range<R> && std::is_standard_layout_v<T>
         class zstd_decode_view : public std::ranges::view_interface<zstd_decode_view<R, T>> {
             R input_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+            int window_log_max_;
         public:
             /**
              * Initialize a new instance of the zstd_decode_view class.
@@ -28,10 +29,15 @@ namespace sph::ranges::views
              * stream. Failure to provide a valid stream will result in a
              * std::invalid_argument exception.
              * 
+             * @param window_log_max Size limit (in powers of 2) beyond which
+             * the decompressor will refuse to allocate a memory buffer in
+             * order to protect the host; zero for default. Valid values
+             * (typically): 11 through 30 (32-bit), 11 through 31 (64-bit).
+             * Out of range values will be clamped.
              * @param input the range to decompress.
              */
-            explicit zstd_decode_view(R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
-                : input_(std::forward<R>(input)) {}
+            zstd_decode_view(int window_log_max, R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+                : input_(std::forward<R>(input)), window_log_max_{window_log_max} {}
 
             zstd_decode_view(zstd_decode_view const&) = default;
             zstd_decode_view(zstd_decode_view&&) = default;
@@ -78,11 +84,16 @@ namespace sph::ranges::views
                 /**
                  * Initialize a new instance of the zstd_decode_view::iterator
                  * class.
+                 * @param window_log_max Size limit (in powers of 2) beyond
+                 * which the decompressor will refuse to allocate a memory
+                 * buffer in order to protect the host; zero for default. Valid
+                 * values (typically): 11 through 30 (32-bit), 11 through 31
+                 * (64-bit). Out of range values will be clamped.
                  * @param begin The start of the input range to decompress.
                  * @param end The end of the input range.
                  */
-                iterator(std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end)
-                    : current_(std::move(begin)), end_(std::move(end))
+                iterator(int window_log_max, std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end)
+                    : decompress_{window_log_max}, current_(std::move(begin)), end_(std::move(end))
                 {
                     load_next_value();
                 }
@@ -150,6 +161,11 @@ namespace sph::ranges::views
                  */
                 void load_next_value()
                 {
+                    auto prev_value{ value_ };
+                    (void)prev_value;
+                    value_ = 0;
+                    auto last_v{ 0 };
+                    (void)last_v;
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-container"
@@ -187,6 +203,7 @@ namespace sph::ranges::views
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+                        last_v = v;
                         ++decompress_.out().pos;
                     }
                 }
@@ -217,6 +234,8 @@ namespace sph::ranges::views
                 {
                     if (current_ == end_)
                     {
+                        std::span<uint8_t const> const foo{ decompress_.in_src(), decompress_.in().size };
+                        fmt::print("######## End: {}\n", fmt::join(foo.subspan(foo.size() - 9) | std::views::transform([](uint8_t x) -> std::string { return fmt::format("{:02X}", x); }), " "));
                         return false;
                     }
 
@@ -246,6 +265,8 @@ namespace sph::ranges::views
                             {
                                 decompress_.in().size = i;
                                 decompress_.in().pos = 0;
+                                std::span<uint8_t const> const foo{ decompress_.in_src(), decompress_.in().size };
+                                fmt::print("######## End: {}\n", fmt::join(foo.subspan(foo.size() - 9) | std::views::transform([](uint8_t x) -> std::string { return fmt::format("{:02X}", x); }), " "));
                                 if (i == 0)
                                 {
                                     return false;
@@ -314,7 +335,7 @@ namespace sph::ranges::views
                 auto operator!=(const iterator& i) const -> bool { return !i.equals(*this); }
             };
 
-            iterator begin() const { return iterator(std::ranges::begin(input_), std::ranges::end(input_)); }
+            iterator begin() const { return iterator(window_log_max_, std::ranges::begin(input_), std::ranges::end(input_)); }
 
             sentinel end() const { return sentinel{}; }
         };
@@ -327,12 +348,15 @@ namespace sph::ranges::views
          * @tparam T The type to decompress into.
          */
         template <typename T>
-        struct zstd_decode_fn : std::ranges::range_adaptor_closure<zstd_decode_fn<T>>
+        class zstd_decode_fn : public std::ranges::range_adaptor_closure<zstd_decode_fn<T>>
         {
+            int window_log_max_;
+        public:
+            explicit zstd_decode_fn(int window_log_max = 0) : window_log_max_{ window_log_max } {}
             template <std::ranges::viewable_range R>
             [[nodiscard]] constexpr auto operator()(R&& range) const -> zstd_decode_view<std::views::all_t<R>, T>
             {
-                return zstd_decode_view<std::views::all_t<R>, T>(std::views::all(std::forward<R>(range)));
+                return zstd_decode_view<std::views::all_t<R>, T>(window_log_max_, std::views::all(std::forward<R>(range)));
             }
         };
     }
@@ -345,12 +369,17 @@ namespace sph::views
      *
      * Will fail to decompress and throw a std::invalid_argument if the provided range does not represent a valid zstd compressed stream.
      * 
-     * @tparam T The type to decompress into. Should probably match, but doesn't have to match, the type that was compressed from.
-	 * @return A functor that takes a zstd compressed range and returns a view of the decompressed information.
+     * @tparam T The type to decompress into. Should probably match, but
+     * doesn't have to match, the type that was compressed from.
+     * @param window_log_max Size limit (in powers of 2) beyond which the
+     * decompressor will refuse to allocate a memory buffer in order to protect
+     * the host; zero for default. Valid values (typically): 11 through 30
+     * (32-bit), 11 through 31 (64-bit). Out of range values will be clamped.
+     * @return A functor that takes a zstd compressed range and returns a view of the decompressed information.
 	 */
 	template<typename T = uint8_t>
-    auto zstd_decode() -> sph::ranges::views::detail::zstd_decode_fn<T>
+    auto zstd_decode(int window_log_max = 0) -> sph::ranges::views::detail::zstd_decode_fn<T>
     {
-        return {};
+        return sph::ranges::views::detail::zstd_decode_fn<T>{window_log_max};
     }
 }

@@ -63,14 +63,23 @@ namespace sph::ranges::views::detail
 		{
 			ZSTD_DCtx* ctx{};
 			zstd_decompress_buf buf{};
-			zstd_data() : ctx{ init_ctx() } {}
+            zstd_data() : ctx{ init_ctx(0) } {} // 0 sets the default window log max (27 typically)
+            /**
+             * Initialize a new instance of the zstd_data class.
+             * @param window_log_max Size limit (in powers of 2) beyond which
+             * the decompressor will refuse to allocate a memory buffer in
+             * order to protect the host; zero for default. Valid values
+             * (typically): 11 through 30 (32-bit), 11 through 31 (64-bit).
+             * Out of range values will be clamped.
+             */
+            explicit zstd_data(int window_log_max) : ctx{ init_ctx(window_log_max) } {}
 			zstd_data(zstd_data const&) = delete;
 			zstd_data(zstd_data&&) = default;
 			~zstd_data() { ZSTD_freeDCtx(ctx); }
 			auto operator=(zstd_data const&)->zstd_data & = delete;
 			auto operator=(zstd_data&&)->zstd_data & = default;
 		private:
-			static auto init_ctx() -> ZSTD_DCtx*
+			static auto init_ctx(int window_log_max) -> ZSTD_DCtx*
 			{
 				auto const ret{ ZSTD_createDCtx() };
 				if (ret == nullptr)
@@ -78,14 +87,37 @@ namespace sph::ranges::views::detail
 					throw std::runtime_error("Failed to create zstd decompress context.");
 				}
 
-				return ret;
-			}
+                if (window_log_max != 0)
+                {
+                    auto const [bounds_result, lower_bound, upper_bound]{ZSTD_dParam_getBounds(ZSTD_d_windowLogMax)};
+                    if (ZSTD_isError(bounds_result))
+                    {
+                        ZSTD_freeDCtx(ret);
+                        throw std::runtime_error(std::format("Failed to get zstd decompress context bounds: {}.",
+                                                             ZSTD_getErrorName(bounds_result)));
+                    }
+
+                    ZSTD_DCtx_setParameter(ret, ZSTD_d_windowLogMax,
+                                           std::clamp(window_log_max, lower_bound, upper_bound));
+                }
+
+                return ret;
+            }
 		};
 		std::shared_ptr<zstd_data> data_;
 		bool can_decompress_{ true };
 
 	public:
 		zstd_decompressor() : data_{ std::make_shared<zstd_data>() } {}
+		/**
+		 * Initialize a new instance of the zstd_decompressor class.
+		 * @param window_log_max Size limit (in powers of 2) beyond which
+		 * the decompressor will refuse to allocate a memory buffer in
+		 * order to protect the host; zero for default. Valid values
+		 * (typically): 11 through 30 (32-bit), 11 through 31 (64-bit).
+		 * Out of range values will be clamped.
+		 */
+		explicit zstd_decompressor(int window_log_max) : data_{ std::make_shared<zstd_data>(window_log_max) } {}
 		zstd_decompressor(zstd_decompressor const&o)
 			: data_{o.data_}
 			, can_decompress_{false} // only  one copy can decompress at a time

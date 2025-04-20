@@ -17,11 +17,25 @@ namespace sph::ranges::views
         template<std::ranges::viewable_range R, typename T>
             requires std::ranges::input_range<R> && std::is_standard_layout_v<T>
         class zstd_encode_view : public std::ranges::view_interface<zstd_encode_view<R, T>> {
-            int compression_level_;
             R input_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+            int compression_level_;
         public:
+            /**
+             * Initialize a new instance of the zstd_encode_view class.
+             *
+             * Provides a begin() iterator and end() sentinel over the
+             * compressed view of the given input range.
+             *
+             * If the size of the output type is greater than 1, the output may
+             * get a zstd skippable frame appended to populate the missing
+             * bytes.
+             *
+             * @param compression_level Value clamped to ZSTD_minCLevel() and
+             * ZSTD_maxCLevel().
+             * @param input the range to decompress.
+             */
             explicit zstd_encode_view(int compression_level, R&& input)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
-                : compression_level_{ compression_level }, input_(std::forward<R>(input)) {}
+                : input_(std::forward<R>(input)), compression_level_{ compression_level } {}
 
             zstd_encode_view(zstd_encode_view const&) = default;
             zstd_encode_view(zstd_encode_view&&) = default;
@@ -417,7 +431,7 @@ namespace sph::ranges::views
         {
             int compression_level_;
         public:
-            zstd_encode_fn(int compression_level) : compression_level_{compression_level}{}
+            explicit zstd_encode_fn(int compression_level) : compression_level_{compression_level}{}
             template <std::ranges::viewable_range R>
             [[nodiscard]] constexpr auto operator()(R&& range) const -> zstd_encode_view<std::views::all_t<R>, T>
             {
@@ -460,6 +474,6 @@ namespace sph::views
 	template<typename T = uint8_t>
     auto zstd_encode(int compression_level = 0) -> sph::ranges::views::detail::zstd_encode_fn<T>
     {
-        return {compression_level};
+        return sph::ranges::views::detail::zstd_encode_fn<T>{compression_level};
     }
 }

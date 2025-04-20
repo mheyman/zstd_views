@@ -358,9 +358,13 @@ TEST_CASE("zstd.levels")
 TEST_CASE("zstd.bigger")
 {
 	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(10'000'000)) | std::ranges::to<std::vector>() };
+    fmt::print("First value: {:08X}, Last value: {:08X}\n", truth.front(), truth.back());
 	auto compressed{ truth | sph::views::zstd_encode<size_t>(0) | std::ranges::to<std::vector>() };
 	fmt::print("Compressed size: {} ({} * {})\n", compressed.size()* sizeof(size_t), compressed.size(), sizeof(size_t));
 	CHECK_LT(compressed.size() * sizeof(size_t), truth.size() * sizeof(size_t));
+    std::span<uint8_t const> compressed_bytes(reinterpret_cast<uint8_t const*>(compressed.data()), compressed.size() * sizeof(size_t));
+    auto tail{ compressed_bytes.subspan(compressed_bytes.size() - 9) };
+    fmt::print("######## tail: {}\n", fmt::join(tail | std::views::transform([](uint8_t x) -> std::string { return fmt::format("{:02X}", x); }), " "));
 	auto check{ compressed | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
 	CHECK_EQ(check.size(), truth.size());
 	std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
@@ -373,7 +377,7 @@ TEST_CASE("zstd.bigger")
 TEST_CASE("zstd.encode_decode")
 {
 	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1'000'000)) | std::ranges::to<std::vector>() };
-	auto check{ truth | sph::views::zstd_encode(0) | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
+	auto check{ truth | sph::views::zstd_encode(0) | sph::views::zstd_decode<size_t>(0) | std::ranges::to<std::vector>() };
 	CHECK_EQ(check.size(), truth.size());
 	std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
 		{

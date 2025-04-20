@@ -60,10 +60,11 @@ std::vector<wont_compile> compressed {
 
 The zstd_encode view can take a compression level parameter. If you don't 
 supply one, defaults to using zero - the default for zstd. Zstd typically
-converts this to 3 but it is up to the underlying zstd library. If you supply
-one, whatever you supply will be clamped by `ZSTD_minCLevel()` and 
-`ZSTD_maxCLevel()`. These values are typically -131072 and 22, respectively.
-But, again, this is up to the underlying zstd library. 
+converts this to 3 but it the actual value comes from the underlying zstd 
+library. If you supply one, whatever you supply will be clamped by 
+`ZSTD_minCLevel()` and  `ZSTD_maxCLevel()`. These values are typically 
+-131072 and 22, respectively. But, again, the actual values come from the
+underlying zstd library. 
 
 Where the fastest compression occurs varies widely depending on the
 compressibility of the content. If the content can be easily compressed,
@@ -85,14 +86,14 @@ Know your data if you want the best results for your situation.
 
 The zstd_decode view can take a maximum window size parameter. If you don't
 supply one, it defaults to 0 - the default for zstd. Zstd typically
-converts this to 27 but it is up to the underlying zstd library. This parameter
-can cause the decompressor to reject a compressed stream that requires too much
-memory from the host. The memory used comes from 2 raised to the maximum window
-size parameter. So, 27 (the typical default) means 2^27 bytes or 128MB. If you 
-supply a value, whatever you supply will be clamped by 
-`ZSTD_dParam_getBounds(ZSTD_d_windowLogMax)` which is typically 11 and 30 for 
-32-bit and 11 and 31 for 64-bit. Again, this is up to the underlying zstd
-library.
+converts this to 27 but the actual value comes from the underlying zstd
+library. This parameter can cause the decompressor to reject a compressed 
+stream that requires too much memory from the host. The memory used comes from
+2 raised to the maximum window size parameter. So, 27 (the typical default) 
+means 2^27 bytes or 128MB. If you supply a value, whatever you supply will be
+clamped by `ZSTD_dParam_getBounds(ZSTD_d_windowLogMax)` which is typically 11
+and 30 (2KB and 1GB) for 32-bit and 11 and 31 (2KB and 2GB) for 64-bit. Again,
+the actual values come from the underlying zstd library.
 
 # Building
 

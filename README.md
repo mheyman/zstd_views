@@ -136,4 +136,5 @@ Where {preset} is one of
  * msvc-release-develop
  * msvc-test-debug-develop
  * msvc-test-release-develop
+
 The develop versions built the tests and include sanitizers. The test version also set up CMake testing. All these options are more aspirational then operational.

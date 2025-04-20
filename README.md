@@ -29,7 +29,7 @@ int main()
 
 There are more tricks up this library's sleeve. The zstd_encode view can encode
 to any standard layout type, not just the default uint8_t. To manage this, if
-the compressed length doesn't fit exactly, a zstd skippable frame gets appened
+the compressed length doesn't fit exactly, a zstd skippable frame gets appended
 to use up any leftover bytes.
 
 ```c++

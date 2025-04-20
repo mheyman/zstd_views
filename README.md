@@ -33,26 +33,26 @@ the compressed length doesn't fit exactly, a zstd skippable frame gets appened
 to use up any leftover bytes.
 
 ```c++
-std::vector<size_t> compressed { 
-    uncompressed | sph::views::zstd_encode<size_t>() | std::ranges::to<std::vector>()
-};
+    std::vector<size_t> compressed { 
+        uncompressed | sph::views::zstd_encode<size_t>() | std::ranges::to<std::vector>()
+    };
 ```
 
 The input and output types must be standard layout types. The following will get some 
 form "invalid operands for |" compilation error.
 
 ```c++
-class wont_compile
-{
-	size_t value_;
-public:
-	wont_compile(size_t v) : value_{ v }{}
-	virtual ~wont_compile(){} // virtual function makes it non-standard layout
-};
-// : : :
-std::vector<wont_compile> compressed { 
-    uncompressed | sph::views::zstd_encode<wont_compile>() | std::ranges::to<std::vector>()
-};
+	class wont_compile
+	{
+		size_t value_;
+    public:
+		wont_compile(size_t v) : value_{ v }{}
+		virtual ~wont_compile(){} // virtual function makes it non-standard layout
+    };
+    // : : :
+    std::vector<wont_compile> compressed { 
+        uncompressed | sph::views::zstd_encode<wont_compile>() | std::ranges::to<std::vector>()
+    };
 ```
 
 

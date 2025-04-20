@@ -8,6 +8,10 @@
 #include <zstd_errors.h>
 namespace sph::ranges::views::detail
 {
+	/**
+	 * The zstd decompressor works on a pair of buffers, input and output. This
+	 * class manages those buffers.
+	 */
 	class zstd_decompress_buf
 	{
 		size_t in_max_size_{ ZSTD_DStreamInSize() };
@@ -19,8 +23,15 @@ namespace sph::ranges::views::detail
 		zstd_decompress_buf()
 			: buf_(in_max_size_ + out_max_size_)
 			, in_buf_{ buf_.data(), in_max_size_, in_max_size_ }
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
 			, out_buf_{ buf_.data() + in_max_size_, out_max_size_, out_max_size_ }
-		{}
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+	    {}
 		zstd_decompress_buf(zstd_decompress_buf const&) = default;
 		zstd_decompress_buf(zstd_decompress_buf&&) = default;
 		~zstd_decompress_buf() = default;
@@ -34,8 +45,20 @@ namespace sph::ranges::views::detail
 		[[nodiscard]] auto out_max_size() const -> size_t { return out_max_size_; }
 	};
 
+	/**
+	 * A zstd decompression functor.
+	 *
+	 * Since zstd is written so old-school, its state cannot be handled between
+	 * copies easily. So zstd_decompressor keeps the state in a std::shared_ptr
+	 * and keeps track on whether it has been moved or copied. If moved,
+	 * decompression can continue, if copied it is a std::logic_error to attempt
+	 * to decompress using the copy.
+	 */
 	class zstd_decompressor
 	{
+		/**
+		 * Holds the state for the zstd_decompressor.
+		 */
 		struct zstd_data
 		{
 			ZSTD_DCtx* ctx{};
@@ -101,7 +124,7 @@ namespace sph::ranges::views::detail
 		{
 			if (!can_decompress_)
 			{
-				throw std::runtime_error("Only one copy of the zstd decompressor can decompress. You probably made a copy of the iterator and tried to use it. Moving the iterator is fine.");
+				throw std::logic_error("Only one copy of the zstd decompressor can decompress. You probably made a copy of the iterator and tried to use it. Moving the iterator is fine.");
 			}
 			auto &o{ data_->buf.out() };
 			auto &i{ data_->buf.in() };
@@ -112,7 +135,13 @@ namespace sph::ranges::views::detail
 			{
 				ZSTD_ErrorCode const err{ ZSTD_getErrorCode(ret) };
 				ZSTD_DCtx_reset(data_->ctx, ZSTD_reset_session_only);
-				throw std::runtime_error(std::format("zstd failed compression: {}.", ZSTD_getErrorString(err)));
+				if (err == ZSTD_error_memory_allocation)
+				{
+					// I think memory allocation issues is the only error that can happen that should be a runtime_error here.
+					throw std::runtime_error(std::format("zstd failed decompression: {}.", ZSTD_getErrorString(err)));
+				}
+
+				throw std::invalid_argument(std::format("zstd failed decompression: {}.", ZSTD_getErrorString(err)));
 			}
 
 			o.size = o.pos;

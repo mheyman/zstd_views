@@ -35,7 +35,18 @@ namespace sph::ranges::views
                 return *this;
             }
 
+            /**
+             * Forward declaration of the zstd_encode_view end-of-sequence
+             * sentinel.
+             */
             struct sentinel;
+
+            /**
+             * The iterator for the zstd_encode_view providing a view of the
+             * compressed stream.
+             *
+             * This uses the zstd_compressor class to do the work.
+             */
             class iterator
             {
             public:
@@ -52,11 +63,27 @@ namespace sph::ranges::views
                 // only need skippable_frame_ if sizeof(value_type) > 1
                 struct empty {};
                 using skippable_frame_t = std::conditional_t<sizeof(value_type) == 1, empty, std::optional<std::vector<uint8_t>>>;
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-attributes"
+#endif
                 [[no_unique_address]] skippable_frame_t skippable_frame_{};
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
                 bool reading_complete_{ false };
                 bool compressing_complete_{ false };
                 bool at_end_{ false };
             public:
+                /**
+                 * Initialize a new instance of the zstd_encode_view::iterator
+                 * class.
+                 * @param compression_level Value clamped to ZSTD_minCLevel()
+                 * and ZSTD_maxCLevel(). Zero for default compression (usually
+                 * maps to compression level 3). Higher values compress more.
+                 * @param begin The start of the input range to compress.
+                 * @param end The end of the input range.
+                 */
                 iterator(int compression_level, std::ranges::const_iterator_t<R> begin, std::ranges::const_sentinel_t<R> end)
                     : compress_{ compression_level }, current_(begin), end_(end)
                 {
@@ -70,29 +97,51 @@ namespace sph::ranges::views
                 iterator& operator=(iterator const&) = default;
                 iterator& operator=(iterator&&) = default;
 
+                /**
+                 * Compare the provided iterator for equality.
+                 * @param i The iterator to compare against.
+                 * @return True if the provided iterator is the same as this one.
+                 */
                 auto equals(const iterator& i) const noexcept -> bool
                 {
                     return current_ == i.current_ && compress_.in_pos() == i.compress_.in_pos() && compress_.out_pos() == i.compress_.out_pos();
                 }
 
+                /**
+                 * Compare the provided sentinel for equality.
+                 * @return True if at the end of the compressed view.
+                 */
                 auto equals(const sentinel&) const noexcept -> bool
                 {
                     return at_end_;
                 }
 
-            	auto operator++(int) -> iterator&
+                /**
+                 * Increment the iterator.
+                 * @return The pre-incremented iterator value. This iterator is
+                 * a copy and cannot be used for additional compressing.
+                 */
+                auto operator++(int) -> iterator&
                 {
                     auto ret{ *this };
                     load_next_value();
                     return ret;
                 }
 
+                /**
+                 * Increment the iterator.
+                 * @return The incremented iterator value.
+                 */
                 auto operator++() -> iterator&
                 {
                     load_next_value();
                     return *this;
                 }
 
+                /**
+                 * Gets the current decompressed value.
+                 * @return The current decompressed value.
+                 */
                 auto operator*() const -> value_type
                 {
                     return value_;
@@ -123,17 +172,34 @@ namespace sph::ranges::views
 						user_length = std::byteswap(user_length);
                     }
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
                     std::copy_n(reinterpret_cast<uint8_t const*>(&magic), sizeof(magic), ret.data() + ret.size() - sizeof(magic));
                     std::copy_n(reinterpret_cast<uint8_t const*>(&user_length), sizeof(user_length), ret.data() + ret.size() - sizeof(magic) - sizeof(user_length));
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
                     return ret;
                 }
 
+                /**
+                 * Sets _value to the next compressed value.
+                 */
                 void load_next_value()
                 {
                     if constexpr(sizeof(value_type) > 1)
                     {
-                        std::span<uint8_t, sizeof(value_type)> value_span{reinterpret_cast<uint8_t*>(&value_), sizeof(value_type) };
-	                    if (skippable_frame_)
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-container"
+#endif
+                        std::span<uint8_t, sizeof(value_type)> value_span{ reinterpret_cast<uint8_t*>(&value_), sizeof(value_type) };
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+                        if (skippable_frame_)
 	                    {
 	                    	if (skippable_frame_->empty())
 	                    	{
@@ -160,8 +226,8 @@ namespace sph::ranges::views
 			                        {
 			                        	if (v_count > 0)
 			                        	{
-			                        		skippable_frame_ = skippable_frame(sizeof(value_type) - v_count);
-			                        		for (auto &v1 : value_span.subspan(v_count))
+                                            skippable_frame_ = skippable_frame(sizeof(value_type) - static_cast<size_t>(v_count));
+			                        		for (auto &v1 : value_span.subspan(static_cast<size_t>(v_count)))
 			                        		{
 			                        			v1 = skippable_frame_->back();
 			                        			skippable_frame_->pop_back();
@@ -181,8 +247,15 @@ namespace sph::ranges::views
 		                        }
 	                        }
 
-	                        v = static_cast<uint8_t const*>(compress_.out().dst)[compress_.out().pos];
-	                        ++compress_.out().pos;
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
+                            v = static_cast<uint8_t const*>(compress_.out().dst)[compress_.out().pos];
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+                            ++compress_.out().pos;
 	                    }
                     }
                     else
@@ -204,11 +277,22 @@ namespace sph::ranges::views
                             }
                         }
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
                         value_ = static_cast<value_type*>(compress_.out().dst)[compress_.out().pos];
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
                         ++compress_.out().pos;
                     }
                 }
 
+                /**
+                 * Performs compression on the next chunk, loading the next chunk as needed.
+                 * @return True if more input; false otherwise.
+                 */
                 auto load_next_out() -> bool
                 {
                     if (compressing_complete_)
@@ -249,6 +333,10 @@ namespace sph::ranges::views
                     return !(compressing_complete_ && compress_.out_size() == 0);
                 }
 
+                /**
+                 * Load the next chunk into the buffer the compressor works on.
+                 * @return True if not at end; false otherwise.
+                 */
                 auto load_next_in() -> bool
                 {
                     if (current_ == end_)
@@ -260,7 +348,14 @@ namespace sph::ranges::views
                     size_t i{ 0 };
                     while (true)
                     {
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
                         compress_.in_src()[i] = reinterpret_cast<uint8_t const*>(&*current_)[current_pos_++];
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
                         ++i;
                         if (i == compress_.in_max_size())
                         {
@@ -299,9 +394,9 @@ namespace sph::ranges::views
 
             struct sentinel
             {
-                auto operator==(const sentinel& other) const noexcept -> bool { return true; }
+                auto operator==(const sentinel& /*other*/) const noexcept -> bool { return true; }
                 auto operator==(const iterator& i) const noexcept -> bool { return i.equals(*this); }
-                auto operator!=(const sentinel& other) const noexcept -> bool { return false; }
+                auto operator!=(const sentinel& /*other*/) const noexcept -> bool { return false; }
                 auto operator!=(const iterator& i) const noexcept -> bool { return !i.equals(*this); }
             };
 
@@ -313,6 +408,10 @@ namespace sph::ranges::views
         template<std::ranges::viewable_range R, typename T = uint8_t>
         zstd_encode_view(R&&) -> zstd_encode_view<R, T>;
 
+        /**
+         * Functor that, given a range, provides a zstd compressed view of that range.
+         * @tparam T The type to compress into.
+         */
         template <typename T>
         class zstd_encode_fn : public std::ranges::range_adaptor_closure<zstd_encode_fn<T>>
         {
@@ -330,7 +429,35 @@ namespace sph::ranges::views
 
 namespace sph::views
 {
-    template<typename T = uint8_t>
+	/**
+	 * A range adaptor that represents view of an underlying sequence after
+	 * applying zstd compression to each element.
+	 *
+     * Where the fastest compression occurs varies widely depending on the
+     * compressibility of the content. If the content can be easily compressed,
+     * you may get the fastest compression between -100 and -25. If the content
+     * doesn't compress as well, the negative compression levels will probably
+     * result in a small net expansion.
+     *
+     * Likewise, the positive compression level performance can vary widely.
+     * For easily compressed data, you may get the fastest compression at
+     * level 5 and not get appreciable better compression until level 22
+     * which, in this case, can take twice as long to compress as level 21.
+     * On less compressible data, you may not see much of a difference in
+     * compression until level 16 even though level 15 may take more than
+     * four times longer than level 1 or 4.
+     *
+     * @tparam T The type to compress into. Defaults to uint8_t. Larger types may end up with a zstd skippable frame as padding.
+     * @param compression_level The zstd compression level to apply when
+	 * performing the compression. Clamped by the ZSTD_minCLevel() and
+	 * ZSTD_maxCLevel() values. The minimum value is typically -131072. The
+	 * maximum value is typically 22.
+	 *
+     * Know your data if you want the best results for your situation.
+
+    * @return a functor that takes a range and returns a zstd compressed view of that range.
+	 */
+	template<typename T = uint8_t>
     auto zstd_encode(int compression_level = 0) -> sph::ranges::views::detail::zstd_encode_fn<T>
     {
         return {compression_level};

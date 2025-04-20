@@ -1,23 +1,37 @@
 #include <algorithm>
-#include <doctest/doctest.h>
-
 #include <array>
-#include <sph/ranges/views/zstd_encode.h>
-#include <sph/ranges/views/zstd_decode.h>
-#include <ranges>
-#include <vector>
+#include <chrono>
+#include <doctest/doctest.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <ranges>
+#include <sph/ranges/views/zstd_decode.h>
+#include <sph/ranges/views/zstd_encode.h>
+#include <vector>
 
 namespace
 {
 	class wont_compile
 	{
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-private-field"
+#pragma clang diagnostic ignored "-Wunknown-attributes"
+#pragma clang diagnostic ignored "-Wunused-member-function"
+#endif
+        [[no_unique_address]] std::array<uint8_t, 1> data_{};
 		size_t value_;
-	public:
+    public:
 		wont_compile(size_t v) : value_{ v }{}
-		virtual ~wont_compile(){}; // virtual function makes it non-standard layout
-	};
+        wont_compile(wont_compile const&) = default;
+        wont_compile(wont_compile&&) = default;
+		virtual ~wont_compile(){} // virtual function makes it non-standard layout
+        auto operator=(wont_compile const&) -> wont_compile & = default;
+        auto operator=(wont_compile&&) -> wont_compile & = default;
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+    };
 
 	/**
 	 * Lightly ported from the example code https://github.com/facebook/zstd/blob/dev/examples/streaming_compression.c
@@ -75,8 +89,16 @@ namespace
 		std::vector<uint8_t> ret;
         for (;;) {
 			size_t const read = std::min(buf_in.size(), to_compress.size() - in_pos);
-			std::copy_n(to_compress.data() + in_pos, read, buf_in.data());
-			in_pos += read;
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
+            std::copy_n(to_compress.data() + in_pos, read, buf_in.data());
+            std::copy_n(to_compress.data() + in_pos, read, buf_in.data());
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+            in_pos += read;
 
             /* Select the flush mode.
              * If the read may not be finished (read == toRead) we use
@@ -102,7 +124,14 @@ namespace
 					throw std::runtime_error(fmt::format("ZSTD_compressStream2() failed! {}", ZSTD_getErrorName(remaining)));
 				}
 
-				ret.insert(ret.end(), buf_out.data(), buf_out.data() + output.pos);
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
+                ret.insert(ret.end(), buf_out.data(), buf_out.data() + output.pos);
+#ifdef __clang
+#pragma clang diagnostic pop
+#endif
                 /* If we're on the last chunk we're finished when zstd returns 0,
                  * which means its consumed all the input AND finished the frame.
                  * Otherwise, we're finished when we've consumed all the input.
@@ -156,7 +185,14 @@ namespace
         while (to_decompress_pos < to_decompress.size())
         {
 			size_t read{ std::min(buf_in.size(), to_decompress.size() - to_decompress_pos) };
-			std::copy_n(to_decompress.data() + to_decompress_pos, read, buf_in.data());
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
+            std::copy_n(to_decompress.data() + to_decompress_pos, read, buf_in.data());
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 			to_decompress_pos += read;
             isEmpty = 0;
             ZSTD_inBuffer input { buf_in.data(), read, 0 };
@@ -181,7 +217,14 @@ namespace
 					throw std::runtime_error(fmt::format("ZSTD_decompressStream() failed: {}", ZSTD_getErrorName(res)));
 				}
 
-				ret.insert(ret.end(), buf_out.data(), buf_out.data() + output.pos);
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
+                ret.insert(ret.end(), buf_out.data(), buf_out.data() + output.pos);
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
                 last_result = res;
             }
         }
@@ -208,8 +251,15 @@ namespace
 
 TEST_CASE("zstd.ranges_vs_old_school")
 {
-	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(10'000'000)) | std::ranges::to<std::vector>() };
-	std::span<uint8_t const> truth_bytes(reinterpret_cast<uint8_t const*>(truth.data()), truth.size() * sizeof(size_t));
+	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(100'000)) | std::ranges::to<std::vector>() };
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-container"
+#endif
+    std::span<uint8_t const> truth_bytes(reinterpret_cast<uint8_t const*>(truth.data()), truth.size() * sizeof(size_t));
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 	auto old_school_compressed{ stream_compress_old_school(truth_bytes, 0, 0) };
 	auto ranges_compressed{ truth | sph::views::zstd_encode() | std::ranges::to<std::vector>() };
 	CHECK_EQ(ranges_compressed.size(), old_school_compressed.size());
@@ -229,6 +279,7 @@ TEST_CASE("zstd.ranges_vs_old_school")
             CHECK_EQ(t, c);
         });
 }
+
 TEST_CASE("zstd.basic")
 {
 	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1'000)) | std::ranges::to<std::vector>() };
@@ -242,6 +293,67 @@ TEST_CASE("zstd.basic")
 			CHECK_EQ(t, c);
 		});
 }
+
+TEST_CASE("zstd.levels")
+{
+    std::string_view pinwheel{ "|/-\\" };
+    size_t pinwheel_item{ 0 };
+    auto print_next_spin = [&pinwheel, &pinwheel_item](int level) -> void
+        {
+            fmt::print("{}  {}          \r", pinwheel[pinwheel_item], level);
+            pinwheel_item = (pinwheel_item + 1) % pinwheel.size();
+        };
+    fmt::print("min: {}, max: {}\n", ZSTD_minCLevel(), ZSTD_maxCLevel());
+    size_t to_compress_start{ 0x55C3A53CAACC5A33 };
+#if _DEBUG
+    size_t to_compress_size{ 180'000 };
+#else
+    size_t to_compress_size{ 1'000'000 };
+#endif
+    size_t to_compress_step{ 2'326'440'619 }; // 0x8AAAAAAB, prime number with lots of As
+    std::vector<size_t> to_compress{
+        std::views::iota(static_cast<size_t>(0), to_compress_size)
+        | std::views::transform([to_compress_start, to_compress_step](size_t index) -> size_t
+        {
+            return to_compress_start + (index * to_compress_step);
+        })
+        | std::ranges::to<std::vector>() };
+    auto len = [&to_compress, &print_next_spin](int level) -> std::tuple<size_t, double>
+        {
+            print_next_spin(level);
+            auto const tick{ std::chrono::system_clock::now() };
+            auto const ret{std::ranges::distance(to_compress | sph::views::zstd_encode(level))};
+            return {ret, std::chrono::duration<double>(std::chrono::system_clock::now() - tick).count()};
+        };
+    std::vector<std::tuple<int, std::tuple<size_t, double>>> sizes;
+    int level{ ZSTD_minCLevel() };
+    while (true)
+    {
+        sizes.emplace_back(level, len(level));
+        if (level == -1)
+        {
+            break;
+        }
+
+        level /= 2;
+    }
+
+    for (level = 1; level <= ZSTD_maxCLevel(); ++level)
+    {
+        sizes.emplace_back(level, len(level));
+    }
+    fmt::print(
+        "{}\n",
+        fmt::join(
+            sizes | std::views::transform([original_length = static_cast<double>(to_compress.size() * sizeof(to_compress[0]))](auto&& t) -> std::string
+            {
+                auto [compression_level, t2] {t};
+                auto [compressed_length, compression_time] {t2};
+                return fmt::format("{}: {} ({:.3f}%), {:.3f}", compression_level, compressed_length, 100. * static_cast<double>(compressed_length) / original_length, compression_time);
+            }), 
+            "\n"));
+}
+
 
 TEST_CASE("zstd.bigger")
 {

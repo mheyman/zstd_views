@@ -36,7 +36,6 @@ to use up any leftover bytes.
     std::vector<size_t> compressed { 
         uncompressed | sph::views::zstd_encode<size_t>() | std::ranges::to<std::vector>()
     };
-}
 ```
 
 The input and output types must be standard layout types. The following will get some 
@@ -54,7 +53,6 @@ form "invalid operands for |" compilation error.
     std::vector<wont_compile> compressed { 
         uncompressed | sph::views::zstd_encode<wont_compile>() | std::ranges::to<std::vector>()
     };
-}
 ```
 
 

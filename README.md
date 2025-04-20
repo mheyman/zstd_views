@@ -44,10 +44,10 @@ form "invalid operands for |" compilation error.
 ```c++
 class wont_compile
 {
-	size_t value_;
+    size_t value_;
 public:
-	wont_compile(size_t v) : value_{ v }{}
-	virtual ~wont_compile(){} // virtual function makes it non-standard layout
+    wont_compile(size_t v) : value_{ v }{}
+    virtual ~wont_compile(){} // virtual function makes it non-standard layout
 };
 // : : :
 std::vector<wont_compile> compressed { 

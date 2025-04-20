@@ -162,6 +162,7 @@ namespace sph::ranges::views::detail
 			auto &i{ data_->buf.in() };
 			o.pos = 0;
 			o.size = data_->buf.out_max_size();
+
 			size_t const ret{ ZSTD_decompressStream(data_->ctx, &o, &i) };
 			if (ZSTD_isError(ret))
 			{

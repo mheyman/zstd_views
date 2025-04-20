@@ -358,13 +358,10 @@ TEST_CASE("zstd.levels")
 TEST_CASE("zstd.bigger")
 {
 	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(10'000'000)) | std::ranges::to<std::vector>() };
-    fmt::print("First value: {:08X}, Last value: {:08X}\n", truth.front(), truth.back());
 	auto compressed{ truth | sph::views::zstd_encode<size_t>(0) | std::ranges::to<std::vector>() };
-	fmt::print("Compressed size: {} ({} * {})\n", compressed.size()* sizeof(size_t), compressed.size(), sizeof(size_t));
+	fmt::print("Compressed size: {} ({} * {}), {:.2F}% of original\n", compressed.size()* sizeof(size_t), compressed.size(), sizeof(size_t), 100. * static_cast<double>(compressed.size()) / static_cast<double>(truth.size()));
 	CHECK_LT(compressed.size() * sizeof(size_t), truth.size() * sizeof(size_t));
     std::span<uint8_t const> compressed_bytes(reinterpret_cast<uint8_t const*>(compressed.data()), compressed.size() * sizeof(size_t));
-    auto tail{ compressed_bytes.subspan(compressed_bytes.size() - 9) };
-    fmt::print("######## tail: {}\n", fmt::join(tail | std::views::transform([](uint8_t x) -> std::string { return fmt::format("{:02X}", x); }), " "));
 	auto check{ compressed | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
 	CHECK_EQ(check.size(), truth.size());
 	std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
@@ -390,7 +387,7 @@ TEST_CASE("zstd.encode_decode")
 TEST_CASE("zstd.wont_compile")
 {
 	[[maybe_unused]] std::array<wont_compile, 4> a{ {wont_compile{1}, wont_compile{2}, wont_compile{3}, wont_compile{4}} };
-	// auto encoded{ a | sph::views::zstd_encode() };
+    // [[maybe_unused]] auto encoded{ a | sph::views::zstd_encode() };
 	[[maybe_unused]] std::array<uint8_t, 8> b{ {1, 2, 3, 4, 5, 6, 7, 8} };
-	// auto decoded{ b | sph::views::zstd_decode<wont_compile>() };
+    // [[maybe_unused]] auto decoded{ b | sph::views::zstd_decode<wont_compile>() };
 }

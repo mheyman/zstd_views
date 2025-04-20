@@ -15,7 +15,7 @@ namespace sph::ranges::views
          * @tparam T The output range value type.
          */
         template<std::ranges::viewable_range R, typename T>
-            requires std::ranges::input_range<R> && std::is_standard_layout_v<T>
+            requires std::ranges::input_range<R> && std::is_standard_layout_v<T> && std::is_standard_layout_v<std::remove_cvref_t<std::ranges::range_value_t<R>>>
         class zstd_encode_view : public std::ranges::view_interface<zstd_encode_view<R, T>> {
             R input_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
             int compression_level_;
@@ -461,15 +461,14 @@ namespace sph::views
      * compression until level 16 even though level 15 may take more than
      * four times longer than level 1 or 4.
      *
+     * Know your data if you want the best results for your situation.
+     *
      * @tparam T The type to compress into. Defaults to uint8_t. Larger types may end up with a zstd skippable frame as padding.
      * @param compression_level The zstd compression level to apply when
 	 * performing the compression. Clamped by the ZSTD_minCLevel() and
 	 * ZSTD_maxCLevel() values. The minimum value is typically -131072. The
 	 * maximum value is typically 22.
-	 *
-     * Know your data if you want the best results for your situation.
-
-    * @return a functor that takes a range and returns a zstd compressed view of that range.
+     * @return a functor that takes a range and returns a zstd compressed view of that range.
 	 */
 	template<typename T = uint8_t>
     auto zstd_encode(int compression_level = 0) -> sph::ranges::views::detail::zstd_encode_fn<T>

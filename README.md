@@ -111,29 +111,29 @@ cmake --install build
 
 Where {preset} is one of
 
-clang-debug
-clang-debug-develop
-clang-release
-clang-release-develop
-clang-test-debug
-clang-test-release
-clang-test-release
-gcc-debug
-gcc-debug-develop
-gcc-release
-gcc-release-develop
-gcc-test-debug
-gcc-test-release
-clang-win-debug
-clang-win-debug-develop
-clang-win-release
-clang-win-release-develop
-clang-win-test-debug
-clang-win-test-release
-msvc-debug
-msvc-debug-develop
-msvc-release
-msvc-release-develop
-msvc-test-debug-develop
-msvc-test-release-develop
+ * clang-debug
+ * clang-debug-develop
+ * clang-release
+ * clang-release-develop
+ * clang-test-debug
+ * clang-test-release
+ * clang-test-release
+ * gcc-debug
+ * gcc-debug-develop
+ * gcc-release
+ * gcc-release-develop
+ * gcc-test-debug
+ * gcc-test-release
+ * clang-win-debug
+ * clang-win-debug-develop
+ * clang-win-release
+ * clang-win-release-develop
+ * clang-win-test-debug
+ * clang-win-test-release
+ * msvc-debug
+ * msvc-debug-develop
+ * msvc-release
+ * msvc-release-develop
+ * msvc-test-debug-develop
+ * msvc-test-release-develop
 The develop versions built the tests and include sanitizers. The test version also set up CMake testing. All these options are more aspirational then operational.

@@ -12,7 +12,7 @@ target_sources(
 		main.cpp
 		unit_tests.cpp
 		
-)
+ "doctest_util.h")
 
 target_compile_options(unit_tests PRIVATE "$<$<C_COMPILER_FRONTEND_VARIANT:MSVC>:/utf-8>")
 target_compile_options(unit_tests PRIVATE "$<$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>:/utf-8>")

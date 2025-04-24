@@ -274,6 +274,7 @@ namespace sph::ranges::views
                     }
                     else
                     {
+                        // value_type is a single byte
                         if (compress_.out().pos >= compress_.out().size)
                         {
                             while (true)

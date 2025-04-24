@@ -9,6 +9,7 @@
 #include <sph/ranges/views/zstd_encode.h>
 #include <vector>
 
+#include "doctest_util.h"
 namespace
 {
 	class wont_compile
@@ -278,21 +279,91 @@ TEST_CASE("zstd.ranges_vs_old_school")
             auto [t, c] {v};
             CHECK_EQ(t, c);
         });
+    fmt::print("{} {}/{}, {:0.5f} seconds\n", get_current_test_name(), get_current_test_assert_count() - get_current_test_assert_failed_count(), get_current_test_assert_count(), get_current_test_elapsed());
 }
 
 TEST_CASE("zstd.basic")
 {
-	auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1'000)) | std::ranges::to<std::vector>() };
+    auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1'000))
+        | std::views::transform([](size_t v) -> std::array<uint8_t, sizeof(size_t)>
+        {
+            std::array<uint8_t, sizeof(size_t)> ret;
+            std::copy_n(reinterpret_cast<uint8_t const*>(&v), sizeof(size_t), ret.data());
+            return ret;
+        })
+        | std::views::join
+        | std::ranges::to<std::vector>()
+    };
 	auto compressed{ truth | sph::views::zstd_encode(0) | std::ranges::to<std::vector>()};
-	CHECK_LT(compressed.size(), truth.size() * sizeof(size_t));
-	auto check{ compressed | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
+	CHECK_LT(compressed.size(), truth.size());
+	auto check{ compressed | sph::views::zstd_decode() | std::ranges::to<std::vector>() };
 	CHECK_EQ(check.size(), truth.size());
 	std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
 		{
 			auto [t, c] {v};
 			CHECK_EQ(t, c);
 		});
+    fmt::print("{} {}/{}, {:0.5f} seconds\n", get_current_test_name(), get_current_test_assert_count() - get_current_test_assert_failed_count(), get_current_test_assert_count(), get_current_test_elapsed());
 }
+
+TEST_CASE("zstd.from_multibyte")
+{
+    auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1'000))
+        | std::ranges::to<std::vector>()
+    };
+    auto compressed{ truth | sph::views::zstd_encode(0) | std::ranges::to<std::vector>() };
+    CHECK_LT(compressed.size(), truth.size() * sizeof(size_t));
+    auto check{ compressed | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
+    CHECK_EQ(check.size(), truth.size());
+    std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
+        {
+            auto [t, c] {v};
+            CHECK_EQ(t, c);
+        });
+    fmt::print("{} {}/{}, {:0.5f} seconds\n", get_current_test_name(), get_current_test_assert_count() - get_current_test_assert_failed_count(), get_current_test_assert_count(), get_current_test_elapsed());
+}
+
+TEST_CASE("zstd.to_multibyte")
+{
+    auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1'000))
+        | std::views::transform([](size_t v) -> std::array<uint8_t, sizeof(size_t)>
+        {
+            std::array<uint8_t, sizeof(size_t)> ret;
+            std::copy_n(reinterpret_cast<uint8_t const*>(&v), sizeof(size_t), ret.data());
+            return ret;
+        })
+        | std::views::join
+        | std::ranges::to<std::vector>()
+    };
+    auto compressed{ truth | sph::views::zstd_encode<size_t>(0) | std::ranges::to<std::vector>() };
+    CHECK_LT(compressed.size() * sizeof(size_t), truth.size());
+    auto check{ compressed | sph::views::zstd_decode() | std::ranges::to<std::vector>() };
+    CHECK_EQ(check.size(), truth.size());
+    std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
+        {
+            auto [t, c] {v};
+            CHECK_EQ(t, c);
+        });
+    fmt::print("{} {}/{}, {:0.5f} seconds\n", get_current_test_name(), get_current_test_assert_count() - get_current_test_assert_failed_count(), get_current_test_assert_count(), get_current_test_elapsed());
+}
+
+TEST_CASE("zstd.multibyte_to_multibyte")
+{
+    auto truth{ std::views::iota(static_cast<size_t>(0), static_cast<size_t>(1'000))
+        | std::ranges::to<std::vector>()
+    };
+    auto compressed{ truth | sph::views::zstd_encode<size_t>(0) | std::ranges::to<std::vector>() };
+    CHECK_LT(compressed.size(), truth.size());
+    auto check{ compressed | sph::views::zstd_decode<size_t>() | std::ranges::to<std::vector>() };
+    CHECK_EQ(check.size(), truth.size());
+    std::ranges::for_each(std::views::zip(truth, check), [](auto&& v)
+        {
+            auto [t, c] {v};
+            CHECK_EQ(t, c);
+        });
+    fmt::print("{} {}/{}, {:0.5f} seconds\n", get_current_test_name(), get_current_test_assert_count() - get_current_test_assert_failed_count(), get_current_test_assert_count(), get_current_test_elapsed());
+}
+
 
 TEST_CASE("zstd.levels")
 {
@@ -352,6 +423,7 @@ TEST_CASE("zstd.levels")
                 return fmt::format("{}: {} ({:.3f}%), {:.3f}", compression_level, compressed_length, 100. * static_cast<double>(compressed_length) / original_length, compression_time);
             }), 
             "\n"));
+    fmt::print("{} {}/{}, {:0.5f} seconds\n", get_current_test_name(), get_current_test_assert_count() - get_current_test_assert_failed_count(), get_current_test_assert_count(), get_current_test_elapsed());
 }
 
 
@@ -369,6 +441,7 @@ TEST_CASE("zstd.bigger")
 			auto [t, c] {v};
 			CHECK_EQ(t, c);
 		});
+    fmt::print("{} {}/{}, {:0.5f} seconds\n", get_current_test_name(), get_current_test_assert_count() - get_current_test_assert_failed_count(), get_current_test_assert_count(), get_current_test_elapsed());
 }
 
 TEST_CASE("zstd.encode_decode")
@@ -381,6 +454,7 @@ TEST_CASE("zstd.encode_decode")
 			auto [t, c] {v};
 			CHECK_EQ(t, c);
 		});
+    fmt::print("{} {}/{}, {:0.5f} seconds\n", get_current_test_name(), get_current_test_assert_count() - get_current_test_assert_failed_count(), get_current_test_assert_count(), get_current_test_elapsed());
 }
 
 
@@ -390,4 +464,5 @@ TEST_CASE("zstd.wont_compile")
     // [[maybe_unused]] auto encoded{ a | sph::views::zstd_encode() };
 	[[maybe_unused]] std::array<uint8_t, 8> b{ {1, 2, 3, 4, 5, 6, 7, 8} };
     // [[maybe_unused]] auto decoded{ b | sph::views::zstd_decode<wont_compile>() };
+    fmt::print("{} {}/{}, {:0.5f} seconds\n", get_current_test_name(), get_current_test_assert_count() - get_current_test_assert_failed_count(), get_current_test_assert_count(), get_current_test_elapsed());
 }

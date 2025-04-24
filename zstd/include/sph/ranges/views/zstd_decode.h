@@ -161,29 +161,55 @@ namespace sph::ranges::views
                  */
                 void load_next_value()
                 {
-                    auto prev_value{ value_ };
-                    (void)prev_value;
-                    value_ = static_cast<value_type>(0xFFFFFFFF);
-                    auto last_v{ 0 };
+                    if constexpr (sizeof(value_type) > 1)
+                    {
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-container"
 #endif
-                    for (std::span<uint8_t, sizeof(value_type)> vs{ reinterpret_cast<uint8_t*>(&value_), sizeof(value_type) }; auto t : std::views::enumerate(vs))
+                        for (std::span<uint8_t, sizeof(value_type)> vs{ reinterpret_cast<uint8_t*>(&value_), sizeof(value_type) }; auto t : std::views::enumerate(vs))
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+                        {
+                            auto [v_count, v] {t};
+                            if (decompress_.out().pos >= decompress_.out().size)
+                            {
+                                if (load_next_out() == false)
+                                {
+                                    if (v_count > 0)
+                                    {
+                                        throw std::invalid_argument(std::format("zstd_decode: Partial type at end of data. Required {} bytes, received {}.", sizeof(value_type), v_count));
+                                    }
+
+                                    at_end_ = true;
+                                    if (!maybe_done_)
+                                    {
+                                        throw std::invalid_argument("zstd_decode: Truncated input. Failed decompression at end of input.");
+                                    }
+
+                                    return;
+                                }
+                            }
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+#endif
+                            v = static_cast<uint8_t const*>(decompress_.out().dst)[decompress_.out().pos];
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+                            ++decompress_.out().pos;
+                        }
+                    }
+                    else
                     {
-                        auto [v_count, v] {t};
+                        // value_type is a single byte
                         if (decompress_.out().pos >= decompress_.out().size)
                         {
                             if (load_next_out() == false)
                             {
-                                if (v_count > 0)
-                                {
-                                    throw std::invalid_argument(std::format("zstd_decode: Partial type at end of data. Required {} bytes, received {}.", sizeof(value_type), v_count));
-                                }
-
                                 at_end_ = true;
                                 if (!maybe_done_)
                                 {
@@ -198,12 +224,11 @@ namespace sph::ranges::views
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
 #endif
-                        v = static_cast<uint8_t const*>(decompress_.out().dst)[decompress_.out().pos];
+                        value_ = static_cast<value_type*>(decompress_.out().dst)[decompress_.out().pos];
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
-                        last_v = v;
-                        (void)last_v;
+
                         ++decompress_.out().pos;
                     }
                 }
